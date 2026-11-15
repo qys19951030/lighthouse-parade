@@ -3,12 +3,15 @@ import path from 'node:path';
 
 import { stringify as csvStringify } from 'csv-stringify/sync';
 
-import { reportToRow, reportToRowHeaders } from './report-to-row.js';
+import { buildReportInventory } from './report-inventory.js';
 
-const { readdir, writeFile } = fs.promises;
+const { writeFile } = fs.promises;
 
 /**
- * Combines the individual report CSV's from a folder into a single CSV file.
+ * Combines the individual report CSVs from a folder into a single CSV file.
+ *
+ * The inventory already guarantees one newest usable report per requested URL,
+ * so duplicate history files never produce duplicate rows.
  *
  * @param requestedUrls When provided, only rows for these URLs (the addresses
  * found by the current crawl) are included. Reports for pages that were not
@@ -23,42 +26,48 @@ export const aggregateCSVReports = async (
   requestedUrls?: string[],
   currentReportPaths?: string[],
 ) => {
-  // Skeleton: the incremental implementation consumes these below.
-  void requestedUrls;
-  void currentReportPaths;
   const reportsDirPath = path.join(dataDirPath, 'reports');
-  const files = await readdir(reportsDirPath);
+  const inventory = await buildReportInventory(reportsDirPath);
 
-  const rows = [];
-  let headers: string[] | null = null;
-
-  for (const fileName of files) {
-    if (fileName === '.DS_Store') {
-      continue;
-    }
-
-    const filePath = path.join(reportsDirPath, fileName);
-    const fileContents = fs.readFileSync(filePath, 'utf8');
-    const newRow = reportToRow(fileContents);
-    if (!newRow) {
-      console.log(`Failed to bundle: ${fileName}`);
-      continue;
-    }
-
-    // Derived from a report already known to parse. Reading headers from an
-    // arbitrary file would throw on a malformed one, which only happened to be
-    // safe while the valid reports sorted first.
-    headers ??= reportToRowHeaders(fileContents);
-    rows.push(newRow);
+  for (const { fileName, reason } of inventory.unreadable) {
+    console.log(`Failed to bundle: ${fileName} (${reason})`);
   }
 
-  if (!headers) {
+  // Preserve directory iteration order for the output rows, matching the
+  // historical behavior of reading the folder file by file.
+  const records = [...inventory.reportsByUrl.values()].sort((a, b) =>
+    a.filePath.localeCompare(b.filePath),
+  );
+
+  const inScope = requestedUrls
+    ? records.filter((record) => requestedUrls.includes(record.requestedUrl))
+    : records;
+
+  if (inScope.length === 0) {
     throw new Error(
       `No reports could be read from ${reportsDirPath}. Every Lighthouse run failed, so there is nothing to aggregate — the errors above say why each one failed.`,
     );
   }
 
-  rows.unshift(headers);
+  const currentPathSet = new Set(currentReportPaths ?? []);
+  const headerSource =
+    inScope.find((record) => currentPathSet.has(record.filePath)) ??
+    // No fresh reports (every page was reused): the newest usable report in
+    // scope is the closest thing to "this run's" table shape.
+    inScope.reduce((newest, record) =>
+      record.modifiedMs > newest.modifiedMs ? record : newest,
+    );
+  const headers = headerSource.headers;
+
+  // Columns align by name, never by position: historical reports may come from
+  // a different Lighthouse version with another column order or column set.
+  // Columns missing here stay empty; columns absent from an old report drop.
+  const rows = [
+    headers,
+    ...inScope.map((record) =>
+      headers.map((header) => record.row[header] ?? ''),
+    ),
+  ];
 
   const aggregatedReportData = csvStringify(rows);
 
