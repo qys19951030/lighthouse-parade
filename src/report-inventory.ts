@@ -1,3 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { parseReport } from './report-to-row.js';
+
 /**
  * Inventory of the individual Lighthouse report CSVs already saved in a data
  * directory's `reports/` folder.
@@ -44,6 +49,61 @@ export type ReportInventory = {
 export const buildReportInventory = async (
   reportsDirPath: string,
 ): Promise<ReportInventory> => {
-  void reportsDirPath;
-  throw new Error('buildReportInventory is not implemented yet');
+  const reportsByUrl = new Map<string, ReportRecord>();
+  const unreadable: UnreadableReport[] = [];
+
+  let fileNames: string[];
+  try {
+    fileNames = await fs.promises.readdir(reportsDirPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { reportsByUrl, unreadable };
+    }
+    throw error;
+  }
+
+  for (const fileName of fileNames) {
+    // Finder metadata; kept from the original aggregator's skip list.
+    if (fileName === '.DS_Store') {
+      continue;
+    }
+
+    const filePath = path.join(reportsDirPath, fileName);
+    const fileContents = fs.readFileSync(filePath, 'utf8');
+    const parsed = parseReport(fileContents);
+
+    if (!parsed || parsed.requestedUrl === '') {
+      unreadable.push({
+        fileName,
+        reason: parsed
+          ? 'report has no requested URL'
+          : 'unable to parse report',
+      });
+      continue;
+    }
+
+    const stats = fs.statSync(filePath);
+    const record: ReportRecord = {
+      fileName,
+      filePath,
+      requestedUrl: parsed.requestedUrl,
+      headers: parsed.headers,
+      row: parsed.row,
+      modifiedMs: stats.mtimeMs,
+    };
+
+    // One requested URL can have several history files. The newer report
+    // wins; file name is only a deterministic tiebreak for identical mtimes.
+    const existing = reportsByUrl.get(parsed.requestedUrl);
+    if (
+      !existing ||
+      record.modifiedMs > existing.modifiedMs ||
+      (record.modifiedMs === existing.modifiedMs &&
+        record.fileName > existing.fileName)
+    ) {
+      reportsByUrl.set(parsed.requestedUrl, record);
+    }
+  }
+
+  return { reportsByUrl, unreadable };
 };

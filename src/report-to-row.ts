@@ -51,12 +51,40 @@ const parseSections = (csvFileContents: string) => {
 };
 
 export const reportToRowHeaders = (csvFileContents: string) => {
-  const { meta, categories, audits } = parseSections(csvFileContents);
-  if (!meta || audits.length === 0) {
+  const parsed = parseReport(csvFileContents);
+  if (!parsed) {
     throw new Error('Unable to find report headers');
   }
 
-  return [
+  return parsed.headers;
+};
+
+/** A report parsed into output-column names plus its values keyed by those names. */
+export type ParsedReport = {
+  headers: string[];
+  row: Record<string, string>;
+  requestedUrl: string;
+};
+
+/**
+ * Parses a Lighthouse CSV report into its aggregated-table headers and its
+ * values keyed by header name. The keyed form lets callers (the report
+ * inventory and the aggregator) align reports whose columns differ across
+ * Lighthouse versions by column name instead of by position.
+ *
+ * Returns `false` for half-baked or unrecognizable reports, matching the
+ * historical behavior of `reportToRow`.
+ */
+export const parseReport = (
+  csvFileContents: string,
+): ParsedReport | false => {
+  const { meta, categories, audits } = parseSections(csvFileContents);
+  // Sometimes reports come out half-baked...
+  if (!meta || audits.length === 0) {
+    return false;
+  }
+
+  const headers = [
     'Requested URL',
     'Final URL',
     ...categories.map((row) => `${row.category}: Overall Category Score`),
@@ -65,25 +93,38 @@ export const reportToRowHeaders = (csvFileContents: string) => {
     // — the id is what the docs use and it stays stable across releases.
     ...audits.map((row) => `${row.category}: ${row.audit}`),
   ];
-};
 
-export const reportToRow = (csvFileContents: string) => {
-  const { meta, categories, audits } = parseSections(csvFileContents);
-  // Sometimes reports come out half-baked...
-  if (!meta || audits.length === 0) {
-    return false;
-  }
-
-  // A missing cell becomes an empty one rather than `undefined`, which
-  // csv-stringify would reject outright and take the whole aggregation with it.
-  const csvRow: CSVReportRow = [
-    meta.requestedUrl ?? '',
+  const requestedUrl = meta.requestedUrl ?? '';
+  const values = [
+    requestedUrl,
     // Renamed from `finalUrl` in Lighthouse 10. The fallback keeps reports
     // written by earlier versions readable, since a data directory accumulates
     // across runs.
     meta.finalDisplayedUrl ?? meta.finalUrl ?? '',
     ...categories.map((row) => row.score ?? ''),
     ...audits.map((row) => row.score ?? ''),
+  ];
+
+  const row: Record<string, string> = {};
+  headers.forEach((header, index) => {
+    row[header] = values[index] ?? '';
+  });
+
+  return { headers, row, requestedUrl };
+};
+
+export const reportToRow = (csvFileContents: string) => {
+  const parsed = parseReport(csvFileContents);
+  if (!parsed) {
+    return false;
+  }
+
+  // A missing cell becomes an empty one rather than `undefined`, which
+  // csv-stringify would reject outright and take the whole aggregation with it.
+  const csvRow: CSVReportRow = [
+    parsed.row['Requested URL'] ?? '',
+    parsed.row['Final URL'] ?? '',
+    ...parsed.headers.slice(2).map((header) => parsed.row[header] ?? ''),
   ];
   return csvRow;
 };
