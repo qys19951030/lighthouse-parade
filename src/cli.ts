@@ -10,6 +10,7 @@ import logUpdate from 'log-update';
 import sade from 'sade';
 
 import { aggregateCSVReports } from './aggregate.js';
+import { buildReportInventory } from './report-inventory.js';
 import { scan } from './scan-task.js';
 import {
   countPendingToDisplay,
@@ -81,7 +82,12 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
     '--exclude-path-glob',
     'Specify a glob (in quotes) for paths to exclude. Links to matched paths will not be crawled. The entry page will be crawled regardless of this flag. This flag can be specified multiple times to exclude multiple paths. `*` matches one url segment, `**` matches multiple segments. Trailing slashes are ignored.',
   )
-  .action((siteUrl, dataDirArg: string | undefined, opts) => {
+  .option(
+    '--force',
+    'Ignore any reports already saved in the data directory and run a fresh Lighthouse report for every page found',
+    false,
+  )
+  .action(async (siteUrl, dataDirArg: string | undefined, opts) => {
     const dataDirPath =
       dataDirArg ??
       path.join(process.cwd(), 'lighthouse-parade-data', usefulDirName());
@@ -128,10 +134,16 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
     }
 
     const lighthouseConcurrency = opts['lighthouse-concurrency'];
+    const force: boolean = opts.force;
 
     // Created only once every argument has been validated, so a rejected flag
     // doesn't leave an empty timestamped directory behind.
     fs.mkdirSync(reportsDirPath, { recursive: true });
+
+    // Coverage is decided from the requested URL recorded inside each report,
+    // never from its file name. The inventory is built even with --force so a
+    // failed forced run can fall back to the page's last good report.
+    const reportInventory = await buildReportInventory(reportsDirPath);
 
     const scanner = scan(siteUrl, {
       ignoreRobotsTxt,
@@ -139,17 +151,27 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
       maxCrawlDepth,
       includePathGlob: includePathGlob as string[],
       excludePathGlob: excludePathGlob as string[],
+      force,
+      reportInventory,
     });
 
     const enum State {
       Pending,
       ReportInProgress,
       ReportComplete,
+      Reused,
     }
     const urlStates = new Map<
       string,
       { state: State; error?: Error | string }
     >();
+
+    let freshRunCount = 0;
+    let reusedCount = 0;
+    /** Paths of reports actually written by this run (header alignment source). */
+    const currentReportPaths: string[] = [];
+    /** Every address the crawl found; aggregation is limited to this list. */
+    const crawledUrls: string[] = [];
 
     const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let i = 0;
@@ -160,10 +182,15 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
         ? symbols.error
         : state === State.Pending
           ? ' '
-          : state === State.ReportInProgress
-            ? frame
-            : symbols.success;
+          : state === State.Reused
+            ? kleur.cyan('↺')
+            : state === State.ReportInProgress
+              ? frame
+              : symbols.success;
       let output = `${statusIcon} ${url}`;
+      if (!error && state === State.Reused) {
+        output += ` ${kleur.dim('(reused existing report)')}`;
+      }
       if (error) {
         output += `\n  ${kleur.gray(error.toString())}`;
       }
@@ -175,7 +202,7 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
       const pendingUrls: string[] = [];
       const currentUrls: string[] = [];
       urlStates.forEach(({ state, error }, url) => {
-        if (state === State.ReportComplete) {
+        if (state === State.ReportComplete || state === State.Reused) {
           return;
         }
         const line = `${printLine(url, state, error)}\n`;
@@ -230,6 +257,7 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
     const urlsStream = fs.createWriteStream(urlsFile, { flags: 'a' });
 
     scanner.on('urlFound', (url, contentType, bytes, statusCode) => {
+      crawledUrls.push(url);
       urlStates.set(url, { state: State.Pending });
       const csvLine = [
         JSON.stringify(url),
@@ -240,6 +268,7 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
       urlsStream.write(`${csvLine}\n`);
     });
     scanner.on('reportBegin', (url) => {
+      freshRunCount++;
       urlStates.set(url, { state: State.ReportInProgress });
     });
     scanner.on('reportFail', (url, error) => {
@@ -250,8 +279,15 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
       urlStates.set(url, { state: State.ReportComplete });
       log(printLine(url, State.ReportComplete));
       const reportFileName = makeFileNameFromUrl(url, 'csv');
+      const reportFilePath = path.join(reportsDirPath, reportFileName);
 
-      fs.writeFileSync(path.join(reportsDirPath, reportFileName), reportData);
+      fs.writeFileSync(reportFilePath, reportData);
+      currentReportPaths.push(reportFilePath);
+    });
+    scanner.on('reportReused', (url) => {
+      reusedCount++;
+      urlStates.set(url, { state: State.Reused });
+      log(printLine(url, State.Reused));
     });
 
     scanner.on('info', (message) => {
@@ -266,9 +302,17 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
       .then(async () => {
         clearInterval(intervalId);
 
+        console.log(
+          `Scan finished: ${freshRunCount} new report${
+            freshRunCount === 1 ? '' : 's'
+          } run, ${reusedCount} existing report${
+            reusedCount === 1 ? '' : 's'
+          } reused`,
+        );
+
         console.log('Aggregating reports...');
 
-        await aggregateCSVReports(dataDirPath);
+        await aggregateCSVReports(dataDirPath, crawledUrls, currentReportPaths);
 
         console.log('DONE!');
       })

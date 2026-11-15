@@ -137,5 +137,10 @@ describe('lighthouse-parade CLI', () => {
     );
   });
 
-  it.todo('lists the force flag in its help text');
+  it('lists the force flag in its help text', async () => {
+    const { stdout, exitCode } = await runCli(['--help'], tempDir);
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('--force');
+  });
 });

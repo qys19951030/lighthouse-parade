@@ -67,7 +67,7 @@ const readAggregated = (dir: string) => {
     path.join(dir, 'aggregatedMobileReport.csv'),
     'utf8',
   );
-  return csvParse(text, { columns: true }) as Record<string, string>[];
+  return csvParse<Record<string, string>>(text, { columns: true });
 };
 
 describe('aggregateCSVReports (incremental)', () => {
@@ -141,7 +141,7 @@ describe('aggregateCSVReports (incremental)', () => {
     const rows = readAggregated(dir);
     const headerRow = csvParse(
       fs.readFileSync(path.join(dir, 'aggregatedMobileReport.csv'), 'utf8'),
-    )[0] as string[];
+    )[0];
     expect(headerRow).toContain('performance: fcp');
     expect(headerRow).toContain('performance: new-audit');
     // The column the current run doesn't know about is dropped entirely.
@@ -184,7 +184,7 @@ describe('aggregateCSVReports (incremental)', () => {
 
     const headerRow = csvParse(
       fs.readFileSync(path.join(dir, 'aggregatedMobileReport.csv'), 'utf8'),
-    )[0] as string[];
+    )[0];
     expect(headerRow).toContain('performance: lcp');
     expect(readAggregated(dir)).toHaveLength(2);
   });

@@ -75,9 +75,7 @@ export type ParsedReport = {
  * Returns `false` for half-baked or unrecognizable reports, matching the
  * historical behavior of `reportToRow`.
  */
-export const parseReport = (
-  csvFileContents: string,
-): ParsedReport | false => {
+export const parseReport = (csvFileContents: string): ParsedReport | false => {
   const { meta, categories, audits } = parseSections(csvFileContents);
   // Sometimes reports come out half-baked...
   if (!meta || audits.length === 0) {
@@ -106,9 +104,9 @@ export const parseReport = (
   ];
 
   const row: Record<string, string> = {};
-  headers.forEach((header, index) => {
+  for (const [index, header] of headers.entries()) {
     row[header] = values[index] ?? '';
-  });
+  }
 
   return { headers, row, requestedUrl };
 };

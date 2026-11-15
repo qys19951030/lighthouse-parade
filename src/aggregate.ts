@@ -13,6 +13,7 @@ const { writeFile } = fs.promises;
  * The inventory already guarantees one newest usable report per requested URL,
  * so duplicate history files never produce duplicate rows.
  *
+ * @param dataDirPath Directory containing the `reports/` folder.
  * @param requestedUrls When provided, only rows for these URLs (the addresses
  * found by the current crawl) are included. Reports for pages that were not
  * re-crawled stay out of the aggregation.
@@ -35,7 +36,8 @@ export const aggregateCSVReports = async (
 
   // Preserve directory iteration order for the output rows, matching the
   // historical behavior of reading the folder file by file.
-  const records = [...inventory.reportsByUrl.values()].sort((a, b) =>
+  // eslint-disable-next-line unicorn/prefer-iterator-to-array -- Iterator.prototype.toArray is ES2025; this project targets ES2024
+  const records = [...inventory.reportsByUrl.values()].toSorted((a, b) =>
     a.filePath.localeCompare(b.filePath),
   );
 
@@ -49,7 +51,7 @@ export const aggregateCSVReports = async (
     );
   }
 
-  const currentPathSet = new Set(currentReportPaths ?? []);
+  const currentPathSet = new Set(currentReportPaths);
   const headerSource =
     inScope.find((record) => currentPathSet.has(record.filePath)) ??
     // No fresh reports (every page was reused): the newest usable report in

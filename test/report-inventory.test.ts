@@ -63,19 +63,16 @@ describe('buildReportInventory', () => {
     fs.mkdirSync(reportsDir);
     // A deliberately misleading file name: the URL inside the report is what
     // must be used, not this name.
-    writeReport(
-      reportsDir,
-      'totally-unrelated-name.csv',
-      'https://a.test/',
-    );
+    writeReport(reportsDir, 'totally-unrelated-name.csv', 'https://a.test/');
 
     const inventory = await buildReportInventory(reportsDir);
 
     expect(inventory.unreadable).toEqual([]);
+    // eslint-disable-next-line unicorn/prefer-iterator-to-array -- Iterator.prototype.toArray is ES2025; this project targets ES2024
     expect([...inventory.reportsByUrl.keys()]).toEqual(['https://a.test/']);
-    expect(
-      inventory.reportsByUrl.get('https://a.test/')?.fileName,
-    ).toBe('totally-unrelated-name.csv');
+    expect(inventory.reportsByUrl.get('https://a.test/')?.fileName).toBe(
+      'totally-unrelated-name.csv',
+    );
   });
 
   it('picks the newest report when one URL has several history files', async () => {
@@ -93,6 +90,7 @@ describe('buildReportInventory', () => {
 
     const inventory = await buildReportInventory(reportsDir);
 
+    // eslint-disable-next-line unicorn/prefer-iterator-to-array -- Iterator.prototype.toArray is ES2025; this project targets ES2024
     expect([...inventory.reportsByUrl.keys()]).toHaveLength(1);
     const record = inventory.reportsByUrl.get('https://a.test/');
     expect(record?.fileName).toBe('new.csv');
@@ -103,7 +101,10 @@ describe('buildReportInventory', () => {
     const dir = makeTempDir();
     const reportsDir = path.join(dir, 'reports');
     fs.mkdirSync(reportsDir);
-    fs.writeFileSync(path.join(reportsDir, 'broken.csv'), 'not a lighthouse report');
+    fs.writeFileSync(
+      path.join(reportsDir, 'broken.csv'),
+      'not a lighthouse report',
+    );
 
     const inventory = await buildReportInventory(reportsDir);
 

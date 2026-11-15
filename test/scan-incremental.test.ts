@@ -5,10 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { createFakeCrawler } from '../src/crawl.mock.js';
 import { createEmitter } from '../src/emitter.js';
 import type { LighthouseEvents } from '../src/lighthouse.js';
-import type {
-  ReportInventory,
-  ReportRecord,
-} from '../src/report-inventory.js';
+import type { ReportInventory, ReportRecord } from '../src/report-inventory.js';
 import { type ScanEvents, scan } from '../src/scan-task.js';
 
 // Deliberately process.nextTick rather than queueMicrotask. The emitter
@@ -21,8 +18,8 @@ const makeRecord = (
   requestedUrl: string,
   overrides: Partial<ReportRecord> = {},
 ): ReportRecord => ({
-  fileName: `history-${requestedUrl.replaceAll(/[^a-z]/gi, '')}.csv`,
-  filePath: `/tmp/reports/history-${requestedUrl.replaceAll(/[^a-z]/gi, '')}.csv`,
+  fileName: `history-${requestedUrl.replaceAll(/[^a-z]/giv, '')}.csv`,
+  filePath: `/tmp/reports/history-${requestedUrl.replaceAll(/[^a-z]/giv, '')}.csv`,
   requestedUrl,
   headers: ['Requested URL', 'Final URL'],
   row: { 'Requested URL': requestedUrl, 'Final URL': requestedUrl },
@@ -115,9 +112,10 @@ test('re-runs a page whose only existing report is unreadable and warns with the
     ...baseOptions,
     crawler: fakeCrawler,
     lighthouse,
-    reportInventory: inventoryWith([], [
-      { fileName: 'corrupt.csv', reason: 'unable to parse report' },
-    ]),
+    reportInventory: inventoryWith(
+      [],
+      [{ fileName: 'corrupt.csv', reason: 'unable to parse report' }],
+    ),
   });
 
   const onWarning = vi.fn<ScanEvents['warning']>();
@@ -196,9 +194,7 @@ test('falls back to the historical report when a forced run fails for a covered 
 
   expect(onReportFail).not.toHaveBeenCalled();
   expect(onReportReused).toHaveBeenCalledWith('https://example.com/a');
-  expect(onInfo).toHaveBeenCalledWith(
-    expect.stringContaining('history-a.csv'),
-  );
+  expect(onInfo).toHaveBeenCalledWith(expect.stringContaining('history-a.csv'));
 });
 
 test('always re-emits urlFound, even when the report is reused', async () => {

@@ -75,7 +75,7 @@ export const scan = (
 
   crawlerEmitter.on('urlFound', (url, contentType, bytes, statusCode) => {
     hasFoundAnyPages = true;
-    // urls.csv records every crawled address, reused pages included.
+    // Urls.csv records every crawled address, reused pages included.
     emit('urlFound', url, contentType, bytes, statusCode);
 
     if (seenUrls.has(url)) {
