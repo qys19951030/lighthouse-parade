@@ -38,12 +38,19 @@ export type ScanEvents = {
   ) => void;
 };
 
+const emptyInventory = (): ReportInventory => ({
+  reportsByUrl: new Map(),
+  unreadable: [],
+});
+
 export const scan = (
   siteUrl: string,
   {
     crawler = defaultCrawler,
     lighthouse = runLighthouseReport,
     lighthouseConcurrency,
+    force = false,
+    reportInventory = emptyInventory(),
     ...opts
   }: ScanOptions,
 ) => {
@@ -51,15 +58,38 @@ export const scan = (
   /** Used so we can display an error if no pages are found while crawling */
   let hasFoundAnyPages = false;
 
+  // Files that could not be parsed are not coverage: they never skip a page.
+  // Their names surface here so the terminal can point at them directly.
+  for (const { fileName, reason } of reportInventory.unreadable) {
+    emit('warning', `Ignoring unreadable report ${fileName}: ${reason}`);
+  }
+
   emit('info', 'Starting the crawl...');
 
   const crawlerEmitter = crawler(siteUrl, opts);
 
   const lighthousePromises: Promise<void>[] = [];
+  // The same URL can be reported by the crawler more than once. Only the
+  // first sighting should make a reuse decision or start a Lighthouse run.
+  const seenUrls = new Set<string>();
 
   crawlerEmitter.on('urlFound', (url, contentType, bytes, statusCode) => {
     hasFoundAnyPages = true;
+    // urls.csv records every crawled address, reused pages included.
     emit('urlFound', url, contentType, bytes, statusCode);
+
+    if (seenUrls.has(url)) {
+      return;
+    }
+    seenUrls.add(url);
+
+    const existingReport = reportInventory.reportsByUrl.get(url);
+
+    if (existingReport && !force) {
+      emit('reportReused', url);
+      return;
+    }
+
     lighthousePromises.push(
       new Promise((resolve) => {
         lighthouse(url, lighthouseConcurrency)
@@ -69,7 +99,17 @@ export const scan = (
             resolve();
           })
           .on('error', (error) => {
-            emit('reportFail', url, error);
+            // A forced re-run that still fails must not make the page vanish:
+            // keep the page covered with its last known good report.
+            if (existingReport) {
+              emit(
+                'info',
+                `Lighthouse failed for ${url}; reusing the existing report ${existingReport.fileName} instead`,
+              );
+              emit('reportReused', url);
+            } else {
+              emit('reportFail', url, error);
+            }
             // Resolves instead of rejects because we want to continue with the other lighthouses even if one fails
             resolve();
           });
