@@ -1,6 +1,7 @@
 import { type CrawlOptions, crawl as defaultCrawler } from './crawl.js';
 import { createEmitter } from './emitter.js';
 import { runLighthouseReport } from './lighthouse.js';
+import type { ReportInventory } from './report-inventory.js';
 
 type ScanOptions = {
   /**
@@ -10,6 +11,14 @@ type ScanOptions = {
   crawler?: typeof defaultCrawler;
   lighthouse?: typeof runLighthouseReport;
   lighthouseConcurrency: number;
+  /** Ignore any usable reports in the inventory and run every page fresh. */
+  force?: boolean;
+  /**
+   * Inventory of reports saved from earlier runs. Pages whose requested URL
+   * already has a usable report are reused (unless `force` is set) instead of
+   * starting another Lighthouse run.
+   */
+  reportInventory?: ReportInventory;
 } & CrawlOptions;
 
 export type ScanEvents = {
@@ -18,6 +27,8 @@ export type ScanEvents = {
   reportBegin: (url: string) => void;
   reportFail: (url: string, error: string | Error) => void;
   reportComplete: (url: string, reportData: string) => void;
+  /** A previously saved report is being reused, so Lighthouse is not started. */
+  reportReused: (url: string) => void;
   resolve: () => void;
   urlFound: (
     url: string,

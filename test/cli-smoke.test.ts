@@ -136,4 +136,6 @@ describe('lighthouse-parade CLI', () => {
       '--exclude-path-glob must be path(s), not full URL(s)',
     );
   });
+
+  it.todo('lists the force flag in its help text');
 });

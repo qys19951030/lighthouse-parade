@@ -7,8 +7,25 @@ import { reportToRow, reportToRowHeaders } from './report-to-row.js';
 
 const { readdir, writeFile } = fs.promises;
 
-/** Combines the individual report CSV's from a folder into a single CSV file */
-export const aggregateCSVReports = async (dataDirPath: string) => {
+/**
+ * Combines the individual report CSV's from a folder into a single CSV file.
+ *
+ * @param requestedUrls When provided, only rows for these URLs (the addresses
+ * found by the current crawl) are included. Reports for pages that were not
+ * re-crawled stay out of the aggregation.
+ * @param currentReportPaths File paths of the reports produced by the current
+ * run. When present, the output headers are aligned to one of these reports.
+ * When the run reused only historical reports, the newest usable report in
+ * scope supplies the headers instead.
+ */
+export const aggregateCSVReports = async (
+  dataDirPath: string,
+  requestedUrls?: string[],
+  currentReportPaths?: string[],
+) => {
+  // Skeleton: the incremental implementation consumes these below.
+  void requestedUrls;
+  void currentReportPaths;
   const reportsDirPath = path.join(dataDirPath, 'reports');
   const files = await readdir(reportsDirPath);
 
