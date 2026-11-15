@@ -30,6 +30,12 @@ Ex: `npx lighthouse-parade http://www.dfwfreeways.com/`
 
 Runs a crawler on the provided URL. Discovers all URLs and runs a lighthouse report on each HTML page, then writes them to a CSV file located in `./lighthouse-parade-data/<timestamp>/urls.csv`. The individual reports are written to `./lighthouse-parade-data/<timestamp>/reports/`. At the end, each report file is bundled into one aggregated report CSV with each row representing a URL and each column is a metric.
 
+### Incremental runs
+
+Pointing a later run at the same data directory makes it incremental. Before Lighthouse starts, the existing `reports/` files are read and indexed by the requested URL recorded inside each report (the file names are derived from URLs and are not trusted). A page that already has a usable report is reused, so Lighthouse is not started for it; only pages without a report are measured. `urls.csv` still lists every address the crawl found, and the terminal reports how many reports were newly run and how many were reused.
+
+The aggregated report only covers the URLs found by the current crawl, so pages removed from the site stop appearing. When one URL has several historical reports, the newest one is used; columns are aligned by name, so reports written by a different Lighthouse version merge without shifting columns. A report that cannot be parsed is ignored with a warning naming the file, and the affected page is measured again. Pass `--force` to ignore every saved report and measure all pages from scratch.
+
 ### Options
 
 ```text
@@ -39,6 +45,7 @@ Runs a crawler on the provided URL. Discovers all URLs and runs a lighthouse rep
 --max-crawl-depth           Control the maximum depth of crawled links. 1 means only the entry page will be used. 2 means the entry page and any page linked directly from the entry page will be used.
 --include-path-glob         Specify a glob (in quotes) for paths to match. Links to non-matched paths will not be crawled. The entry page will be crawled regardless of this flag. This flag can be specified multiple times to allow multiple paths. `*` matches one url segment, `**` matches multiple segments. Trailing slashes are ignored.
 --exclude-path-glob         Specify a glob (in quotes) for paths to exclude. Links to matched paths will not be crawled. The entry page will be crawled regardless of this flag. This flag can be specified multiple times to exclude multiple paths. `*` matches one url segment, `**` matches multiple segments. Trailing slashes are ignored.
+--force                     Ignore any reports already saved in the data directory and run a fresh Lighthouse report for every page found  (default false)
 -v, --version               Displays current version
 -h, --help                  Displays help text
 ```

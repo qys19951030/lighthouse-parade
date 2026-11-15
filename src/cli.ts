@@ -310,6 +310,12 @@ sade('lighthouse-parade <url> [dataDirectory]', true)
           } reused`,
         );
 
+        // No pages means nothing to aggregate; the scan's own warning already
+        // explains why. Aggregating here would only raise a confusing error.
+        if (crawledUrls.length === 0) {
+          return;
+        }
+
         console.log('Aggregating reports...');
 
         await aggregateCSVReports(dataDirPath, crawledUrls, currentReportPaths);
